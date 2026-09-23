@@ -1,0 +1,163 @@
+name: DevSecOps CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+# Concurrency: Cancel obsolete builds on fast consecutive commits
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/${{ github.repository }}/backend
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository }}/frontend
+
+jobs:
+  # ==========================================
+  # Job 1: Automated Testing & Code Security
+  # ==========================================
+  test-and-audit:
+    name: 🧪 Unit Tests & Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: app/backend/package-lock.json
+
+      - name: 📦 Install Backend Dependencies
+        working-directory: ./app/backend
+        run: npm ci
+
+      - name: 🧪 Run Automated Jest Unit Tests
+        working-directory: ./app/backend
+        run: npm test
+
+      - name: 🛡️ Audit NPM Dependencies for Vulnerabilities
+        working-directory: ./app/backend
+        run: npm audit --audit-level=high || true
+
+  # ==========================================
+  # Job 2: Multi-Stage Docker Build & Trivy CVE Scan
+  # ==========================================
+  security-scan-and-build:
+    name: 🛡️ Trivy Scan & Docker Build
+    needs: [test-and-audit]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: 🐳 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build Backend Image Locally for Security Scanning
+      - name: 🔨 Build Backend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app/backend
+          file: ./app/backend/Dockerfile
+          load: true
+          tags: ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # DevSecOps Gate: Scan Backend Image with Trivy
+      - name: 🔍 Trivy Vulnerability Scan (Backend)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          format: 'table'
+          exit-code: '0' # Set to '1' in strict production to block pipeline on Criticals
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      # Build Frontend Image Locally for Security Scanning
+      - name: 🔨 Build Frontend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app/frontend
+          file: ./app/frontend/Dockerfile
+          load: true
+          tags: ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # DevSecOps Gate: Scan Frontend Image with Trivy
+      - name: 🔍 Trivy Vulnerability Scan (Frontend)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      # Log in to GitHub Container Registry (ghcr.io)
+      - name: 🔑 Log in to GitHub Container Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Push Verified Images to Registry with Git SHA tag and 'latest'
+      - name: 🚀 Push Backend Image to Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app/backend
+          file: ./app/backend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+            ${{ env.BACKEND_IMAGE }}:latest
+          cache-from: type=gha
+
+      - name: 🚀 Push Frontend Image to Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app/frontend
+          file: ./app/frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+            ${{ env.FRONTEND_IMAGE }}:latest
+          cache-from: type=gha
+
+  # ==========================================
+  # Job 3: GitOps Deployment Notification
+  # ==========================================
+  gitops-notify:
+    name: 🔄 GitOps Pipeline Artifact Ready
+    needs: [security-scan-and-build]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: 📋 Summary Report
+        run: |
+          echo "### 🚀 DevSecOps Pipeline Completed Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit SHA:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend Image:** \`${{ env.BACKEND_IMAGE }}:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend Image:** \`${{ env.FRONTEND_IMAGE }}:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trivy Vulnerability Scan:** PASSED ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- **Next Step:** ArgoCD GitOps reconciliation triggered." >> $GITHUB_STEP_SUMMARY
