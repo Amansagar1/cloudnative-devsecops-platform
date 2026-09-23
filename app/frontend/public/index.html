@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CloudNative DevSecOps Platform | Live Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="navbar">
+      <div class="logo-group">
+        <div class="logo-icon">☸️</div>
+        <div>
+          <h1 class="logo-title">CloudNative DevSecOps</h1>
+          <p class="logo-subtitle">Kubernetes · GitOps (ArgoCD) · Terraform · DevSecOps</p>
+        </div>
+      </div>
+      <div class="cluster-badge">
+        <span class="status-dot live-pulse"></span>
+        <span id="clusterStatusText">Cluster Live</span>
+      </div>
+    </header>
+
+    <!-- Metrics Cards Grid -->
+    <main class="dashboard-grid">
+      <!-- Card 1: Pod / Node Info -->
+      <section class="card" id="podInfoCard">
+        <div class="card-header">
+          <span class="card-tag">INFRASTRUCTURE</span>
+          <span class="icon">🖥️</span>
+        </div>
+        <h2 class="card-title">Active Pod / Host</h2>
+        <div class="pod-display">
+          <span class="pod-label">HOSTNAME:</span>
+          <code id="podHostname" class="mono">fetching...</code>
+        </div>
+        <div class="info-row">
+          <span>Platform:</span>
+          <strong id="platformInfo">-</strong>
+        </div>
+        <div class="info-row">
+          <span>Uptime:</span>
+          <strong id="uptimeInfo">0s</strong>
+        </div>
+        <div class="info-row">
+          <span>Environment:</span>
+          <span class="badge badge-env" id="envBadge">development</span>
+        </div>
+      </section>
+
+      <!-- Card 2: Liveness & Readiness -->
+      <section class="card" id="healthCard">
+        <div class="card-header">
+          <span class="card-tag">K8S PROBES</span>
+          <span class="icon">🩺</span>
+        </div>
+        <h2 class="card-title">Service Health</h2>
+        <div class="health-indicators">
+          <div class="probe-item">
+            <span>Liveness Probe:</span>
+            <span class="status-pill status-up" id="liveStatus">ALIVE</span>
+          </div>
+          <div class="probe-item">
+            <span>Readiness Probe:</span>
+            <span class="status-pill status-up" id="readyStatus">READY</span>
+          </div>
+          <div class="probe-item">
+            <span>PostgreSQL:</span>
+            <span class="status-pill status-ready" id="dbStatus">CONNECTED</span>
+          </div>
+          <div class="probe-item">
+            <span>Redis Cache:</span>
+            <span class="status-pill status-ready" id="redisStatus">CONNECTED</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Card 3: Cache Performance (Hit/Miss) -->
+      <section class="card" id="cacheCard">
+        <div class="card-header">
+          <span class="card-tag">STATE & CACHE</span>
+          <span class="icon">⚡</span>
+        </div>
+        <h2 class="card-title">Redis Cache-Aside</h2>
+        <div class="cache-status-box" id="cacheStatusBox">
+          <span id="cacheHitText">Waiting for request...</span>
+        </div>
+        <div class="info-row">
+          <span>Response Latency:</span>
+          <strong id="latencyValue">0 ms</strong>
+        </div>
+        <div class="info-row">
+          <span>Cache Strategy:</span>
+          <code class="mono">Cache-Aside (TTL: 60s)</code>
+        </div>
+        <button class="btn btn-secondary" id="fetchDataBtn">🔄 Trigger Read Request</button>
+      </section>
+
+      <!-- Card 4: Observability Links -->
+      <section class="card" id="observabilityCard">
+        <div class="card-header">
+          <span class="card-tag">OBSERVABILITY</span>
+          <span class="icon">📊</span>
+        </div>
+        <h2 class="card-title">Metrics & Telemetry</h2>
+        <p class="card-desc">Prometheus metrics exported with real-time scrape endpoints.</p>
+        <div class="link-actions">
+          <a href="/metrics" target="_blank" class="btn btn-outline">📈 View Prometheus Metrics</a>
+          <a href="/api/info" target="_blank" class="btn btn-outline">ℹ️ Raw JSON Diagnostic</a>
+        </div>
+      </section>
+    </main>
+
+    <!-- Microservice Data Section -->
+    <section class="data-section">
+      <div class="data-header">
+        <div>
+          <h2 class="section-title">Microservice Task Items</h2>
+          <p class="section-subtitle">Writes trigger cache invalidation; Reads query Redis cache-first.</p>
+        </div>
+        <form class="add-form" id="addItemForm">
+          <input type="text" id="taskTitleInput" placeholder="New DevOps task (e.g. Deploy Helm Chart)..." required />
+          <button type="submit" class="btn btn-primary">➕ Add Task</button>
+        </form>
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Task Description</th>
+              <th>Status</th>
+              <th>Created At</th>
+            </tr>
+          </thead>
+          <tbody id="itemsTableBody">
+            <tr><td colspan="4" class="empty-state">Loading tasks...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>Cloud-Native DevSecOps Platform · Architected for AWS EKS & GitOps (ArgoCD)</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
