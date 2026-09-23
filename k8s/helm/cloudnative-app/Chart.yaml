@@ -1,0 +1,9 @@
+apiVersion: v2
+name: cloudnative-app
+description: Production-grade Helm chart for CloudNative DevSecOps Platform
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+maintainers:
+  - name: Kumar Aman Sagar
+    email: kumaramansagar01@gmail.com
