@@ -1,0 +1,101 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_REGISTRY = 'ghcr.io'
+        IMAGE_NAME      = 'amansagar1/cloudnative-devsecops-platform'
+        BUILD_TAG       = "${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(7)}"
+        KUBECONFIG_ID   = 'aws-eks-kubeconfig'
+    }
+
+    options {
+        timeout(time: 30, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        // ==========================================
+        // Stage 1: Checkout Source Code
+        // ==========================================
+        stage('Checkout Code') {
+            steps {
+                echo "📥 Checking out branch ${env.BRANCH_NAME}..."
+                checkout scm
+            }
+        }
+
+        // ==========================================
+        // Stage 2: Automated Testing & Audit
+        // ==========================================
+        stage('Unit Tests & Audit') {
+            steps {
+                dir('app/backend') {
+                    echo "📦 Installing dependencies and running unit tests..."
+                    sh 'npm ci'
+                    sh 'npm test'
+                    sh 'npm audit --audit-level=high || true'
+                }
+            }
+        }
+
+        // ==========================================
+        // Stage 3: DevSecOps Vulnerability Scan (Trivy)
+        // ==========================================
+        stage('Trivy Security Scan') {
+            steps {
+                echo "🔍 Scanning Dockerfiles and dependencies for CVEs..."
+                sh 'docker build -t test-backend:scan ./app/backend'
+                sh 'trivy image --severity HIGH,CRITICAL --exit-code 0 test-backend:scan'
+            }
+        }
+
+        // ==========================================
+        // Stage 4: Docker Build & Push
+        // ==========================================
+        stage('Build & Push Docker Images') {
+            steps {
+                script {
+                    docker.withRegistry("https://${DOCKER_REGISTRY}", 'github-container-registry-creds') {
+                        echo "🔨 Building Backend image..."
+                        def backendImg = docker.build("${DOCKER_REGISTRY}/${IMAGE_NAME}/backend:${BUILD_TAG}", "./app/backend")
+                        backendImg.push()
+                        backendImg.push('latest')
+
+                        echo "🔨 Building Frontend image..."
+                        def frontendImg = docker.build("${DOCKER_REGISTRY}/${IMAGE_NAME}/frontend:${BUILD_TAG}", "./app/frontend")
+                        frontendImg.push()
+                        frontendImg.push('latest')
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // Stage 5: Continuous Deployment (GitOps / Kubeconfig)
+        // ==========================================
+        stage('Deploy to Kubernetes') {
+            steps {
+                echo "🚀 Deploying manifests via Kustomize..."
+                withCredentials([file(credentialsId: "${KUBECONFIG_ID}", variable: 'KUBECONFIG')]) {
+                    sh "kubectl apply -k k8s/overlays/dev"
+                    sh "kubectl rollout status deployment/dev-backend-deployment -n dev --timeout=120s"
+                    sh "kubectl rollout status deployment/dev-frontend-deployment -n dev --timeout=120s"
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo "🧹 Cleaning workspace..."
+            cleanWs()
+        }
+        success {
+            echo "✅ Pipeline completed successfully!"
+        }
+        failure {
+            echo "❌ Pipeline failed! Sending incident alert..."
+        }
+    }
+}
